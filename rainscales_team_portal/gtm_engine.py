@@ -301,18 +301,17 @@ def batch_analyze(csv_path: Path) -> List[ProspectReport]:
                 time.sleep(0.5)
 
             except Exception as e:
-                error_data = {
-                    "company_name": company or website,
-                    "website": website,
-                    "industry": row.get("Industry", ""),
-                    "icp_score": 0,
-                    "poc_fit_score": 0,
-                    "tier": "Error",
-                    "first_use_case": "Skipped due to website access error",
-                    "report_file": "",
-                    "error": str(e)
-                }
-                results.append(ProspectReport(**error_data))
+error_data = {
+    "company_name": company or website,
+    "website": website,
+    "industry": row.get("Industry", ""),
+    "icp_score": 0,
+    "poc_fit_score": 0,
+    "tier": "Error",
+    "first_use_case": f"Skipped due to website access error: {e}",
+    "report_file": ""
+}
+                results.append(error_data)
                 continue
 
     summary = REPORTS / "batch-summary.csv"
@@ -328,13 +327,12 @@ def batch_analyze(csv_path: Path) -> List[ProspectReport]:
                 "tier",
                 "first_use_case",
                 "report_file",
-                "error"
             ]
         )
         writer.writeheader()
 
         for r in results:
-            d = asdict(r)
+            d = asdict(r) if hasattr(r, "__dataclass_fields__") else r
             writer.writerow({k: d.get(k, "") for k in writer.fieldnames})
 
     return results
