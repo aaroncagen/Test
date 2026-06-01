@@ -301,16 +301,17 @@ def batch_analyze(csv_path: Path) -> List[ProspectReport]:
                 time.sleep(0.5)
 
             except Exception as e:
-error_data = {
-    "company_name": company or website,
-    "website": website,
-    "industry": row.get("Industry", ""),
-    "icp_score": 0,
-    "poc_fit_score": 0,
-    "tier": "Error",
-    "first_use_case": f"Skipped due to website access error: {e}",
-    "report_file": ""
-}
+                error_data = {
+                    "company_name": company or website,
+                    "website": website,
+                    "industry": row.get("Industry", ""),
+                    "icp_score": 0,
+                    "poc_fit_score": 0,
+                    "tier": "Error",
+                    "first_use_case": f"Skipped due to website access error: {e}",
+                    "report_file": ""
+                }
+            
                 results.append(error_data)
                 continue
 
