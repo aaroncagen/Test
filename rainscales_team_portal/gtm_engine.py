@@ -270,19 +270,71 @@ def analyze(url: str, company_hint: str = "") -> ProspectReport:
 
 def batch_analyze(csv_path: Path) -> List[ProspectReport]:
     results = []
-    with csv_path.open(newline="", encoding="utf-8-sig") as f:
+
+    with csv_path.open(newline="", encoding="utf-8-sig", errors="replace") as f:
         reader = csv.DictReader(f)
+
         for row in reader:
-            website = row.get("Website") or row.get("website") or row.get("URL") or row.get("url")
-            company = row.get("Company Name") or row.get("Company") or row.get("company") or ""
-            if website:
+            website = (
+                row.get("Website")
+                or row.get("website")
+                or row.get("URL")
+                or row.get("url")
+                or row.get("Company Website")
+                or row.get("Website URL")
+                or ""
+            ).strip()
+
+            company = (
+                row.get("Company Name")
+                or row.get("Company")
+                or row.get("company")
+                or row.get("Name")
+                or ""
+            ).strip()
+
+            if not website:
+                continue
+
+            try:
                 results.append(analyze(website, company))
                 time.sleep(0.5)
+
+            except Exception as e:
+                error_data = {
+                    "company_name": company or website,
+                    "website": website,
+                    "industry": row.get("Industry", ""),
+                    "icp_score": 0,
+                    "poc_fit_score": 0,
+                    "tier": "Error",
+                    "first_use_case": "Skipped due to website access error",
+                    "report_file": "",
+                    "error": str(e)
+                }
+                results.append(ProspectReport(**error_data))
+                continue
+
     summary = REPORTS / "batch-summary.csv"
     with summary.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=["company_name", "website", "industry", "icp_score", "poc_fit_score", "tier", "first_use_case", "report_file"])
+        writer = csv.DictWriter(
+            f,
+            fieldnames=[
+                "company_name",
+                "website",
+                "industry",
+                "icp_score",
+                "poc_fit_score",
+                "tier",
+                "first_use_case",
+                "report_file",
+                "error"
+            ]
+        )
         writer.writeheader()
+
         for r in results:
             d = asdict(r)
             writer.writerow({k: d.get(k, "") for k in writer.fieldnames})
+
     return results
