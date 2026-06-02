@@ -182,7 +182,99 @@ Content:
 
     try:
         msg = client.messages.create(
-            model="claude-3-5-haiku-latest",ide"]):
+            model="claude-3-5-haiku-latest",
+            max_tokens=800,
+            temperature=0,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = msg.content[0].text.strip()
+        text = re.sub(r"^```json|```$", "", text, flags=re.MULTILINE).strip()
+        parsed = json.loads(text)
+        evidence = parsed.get("evidence", [])
+        limited = parsed.get("evidence_limited", False) or len(evidence) < 3
+        return evidence, limited
+    except Exception as e:
+        # Fall back to basic keyword extraction
+        return _extract_evidence_heuristic(url, content), word_count < 500
+
+
+def _extract_evidence_heuristic(url: str, content: str) -> List[str]:
+    """Keyword-based evidence extraction when AI is unavailable."""
+    evidence = []
+    lower = content.lower()
+
+    # Try to find company name
+    m = re.search(r"Title:\s*([^\n|—\-]+)", content)
+    if m:
+        evidence.append(f"Website title: {m.group(1).strip()[:80]}")
+
+    # Employee counts
+    for pat in [r"(\d[\d,]+)\s*(?:employees|staff|workers|team members)", r"employs\s+(?:over|more than|approximately)?\s*(\d[\d,]+)"]:
+        m = re.search(pat, lower)
+        if m:
+            evidence.append(f"Workforce mention: approximately {m.group(1)} employees")
+            break
+
+    # Locations/sites
+    for pat in [r"(\d+)\s*(?:locations|sites|facilities|warehouses|distribution cent(?:res|ers))", r"operations? (?:in|across) (\d+|\w+) (?:countries|states|regions)"]:
+        m = re.search(pat, lower)
+        if m:
+            evidence.append(f"Operational footprint: {m.group(0)[:80]}")
+            break
+
+    # Certifications
+    for cert in ["iso 45001", "iso 9001", "osha", "whs", "zero harm", "vision zero", "iso 14001"]:
+        if cert in lower:
+            evidence.append(f"Safety/quality certification mentioned: {cert.upper()}")
+
+    # Industry signals
+    for industry, keywords in [
+        ("Logistics/warehousing", ["warehouse", "logistics", "distribution", "freight", "3pl"]),
+        ("Manufacturing", ["manufacturing", "production", "assembly", "factory"]),
+        ("Oil & Gas", ["oil", "gas", "refinery", "pipeline", "petroleum"]),
+        ("Healthcare", ["hospital", "healthcare", "patient care", "clinical"]),
+        ("Construction", ["construction", "civil", "infrastructure"]),
+    ]:
+        if any(k in lower for k in keywords):
+            evidence.append(f"Industry signal: {industry} operations mentioned on website")
+            break
+
+    return evidence[:8] if evidence else [f"Limited content available from {url}"]
+
+
+# ── Heuristic fallback (evidence-conditioned) ─────────────────────────────────
+
+def heuristic_report(url: str, content: str, company_hint: str = "") -> Dict:
+    """
+    Fallback when AI is unavailable. Generates cautious, evidence-conditioned output.
+    Never uses hardcoded logistics defaults — all recommendations flagged for validation.
+    """
+    lower = content.lower()
+    company = company_hint or extract_company_name(url, content)
+
+    # Score based on actual signals found
+    score = 40  # baseline for any industrial prospect
+    poc = 35
+
+    vertical_signals = {
+        "Logistics & Distribution":    ["logistics", "warehouse", "distribution", "freight", "fleet", "3pl", "supply chain"],
+        "Manufacturing":               ["manufacturing", "plant", "factory", "production", "assembly"],
+        "Energy / Utilities":          ["oil", "gas", "energy", "utility", "refinery", "pipeline"],
+        "Healthcare Operations":       ["hospital", "healthcare", "clinic", "patient", "medical center"],
+        "Construction & Infrastructure": ["construction", "civil", "infrastructure", "contractor"],
+    }
+    detected_vertical = "Industrial / Operations"
+    for vertical, keywords in vertical_signals.items():
+        if any(k in lower for k in keywords):
+            detected_vertical = vertical
+            score += 20
+            break
+
+    # Qualifying signals
+    if any(k in lower for k in ["safety", "ehs", "hse", "osha", "iso 45001", "zero harm", "whs"]):
+        score += 15
+        poc += 15
+    if any(k in lower for k in ["locations", "facilities", "sites", "global", "nationwide"]):
         score += 10
         poc += 10
     if any(k in lower for k in ["cctv", "camera", "video surveillance", "monitoring"]):
@@ -363,7 +455,7 @@ def summarize_description(content: str, company: str) -> str:
     return (text[:280] + "...") if len(text) > 280 else text
 
 
-# ── AI analysis ────────────────────────────────────────────────────────────────
+# ── AI analysis ──────────────────────────────────────────────────────────────
 
 def ai_report(url: str, content: str, company_hint: str = "") -> Dict:
     key = os.getenv("ANTHROPIC_API_KEY")
@@ -450,7 +542,7 @@ Full website content:
         return data
 
 
-# ── HTML report renderer ───────────────────────────────────────────────────────
+# ── HTML report renderer ─────────────────────────────────────────────────────
 
 def render_report(data: Dict) -> str:
     slug = slugify(data.get("company_name") or data.get("website"))
