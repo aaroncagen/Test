@@ -322,7 +322,7 @@ Content:
 
     try:
         msg = client.messages.create(
-            model="claude-3-5-haiku-latest",
+            model="claude-haiku-4-5-20251001",
             max_tokens=800,
             temperature=0,
             messages=[{"role": "user", "content": prompt}],
@@ -656,7 +656,7 @@ Full website content:
 
     try:
         msg = client.messages.create(
-            model="claude-3-5-sonnet-latest",
+            model="claude-sonnet-4-6",
             max_tokens=5000,
             temperature=0.2,
             messages=[{"role": "user", "content": prompt}],
