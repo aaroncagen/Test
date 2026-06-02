@@ -687,6 +687,7 @@ Full website content:
 
 # ── HTML report renderer ─────────────────────────────────────────────────────
 
+
 def render_report(data: Dict) -> str:
     slug = slugify(data.get("company_name") or data.get("website"))
     filename = f"{slug}-qualification-report.html"
@@ -695,83 +696,213 @@ def render_report(data: Dict) -> str:
     def esc(v):
         return html.escape(str(v or ""))
 
-    def list_items(items):
-        return "".join(f"<li>{esc(x)}</li>" for x in (items or []))
+    def _coerce_str(v) -> str:
+        if isinstance(v, dict):
+            for k in ("description", "body", "rationale", "name", "title", "text"):
+                if v.get(k):
+                    return str(v[k])
+            return " ".join(str(x) for x in v.values() if x)
+        if isinstance(v, list):
+            return " ".join(_coerce_str(x) for x in v)
+        return str(v or "")
 
-    def cards(items):
-        return "".join(f'<div class="card"><p>{esc(x)}</p></div>' for x in (items or []))
+    def render_use_case_card(item) -> str:
+        if isinstance(item, dict):
+            name = esc(item.get("name", ""))
+            desc = esc(item.get("description", ""))
+            evidence = esc(item.get("evidence_basis", ""))
+            parts = []
+            if name:
+                parts.append(f'<strong>{name}</strong>')
+            if desc:
+                parts.append(f'<p>{desc}</p>')
+            if evidence:
+                parts.append(f'<p class="evidence-tag">Evidence: {evidence}</p>')
+            return f'<div class="card">{"".join(parts)}</div>'
+        return f'<div class="card"><p>{esc(_coerce_str(item))}</p></div>'
+
+    def render_stakeholder(item) -> str:
+        if isinstance(item, dict):
+            title = esc(item.get("title", ""))
+            rationale = esc(item.get("rationale", ""))
+            icp_match = esc(item.get("icp_match", ""))
+            parts = []
+            if title:
+                parts.append(f'<strong>{title}</strong>')
+            if icp_match:
+                parts.append(f' <span class="badge">{icp_match}</span>')
+            if rationale:
+                parts.append(f'<br><span class="rationale">{rationale}</span>')
+            return f'<li>{"".join(parts)}</li>'
+        return f'<li>{esc(_coerce_str(item))}</li>'
+
+    def render_first_use_case(item) -> str:
+        if isinstance(item, dict):
+            name = esc(item.get("name", ""))
+            desc = esc(item.get("description", ""))
+            evidence = esc(item.get("evidence_basis", ""))
+            value_prop = esc(item.get("value_proposition", ""))
+            parts = []
+            if name:
+                parts.append(f'<h3>{name}</h3>')
+            if desc:
+                parts.append(f'<p>{desc}</p>')
+            if evidence:
+                parts.append(f'<p class="evidence-tag">Evidence: {evidence}</p>')
+            if value_prop:
+                parts.append(f'<p class="value-prop">{value_prop}</p>')
+            return "".join(parts)
+        return f'<p>{esc(_coerce_str(item))}</p>'
+
+    def render_why_now(item) -> str:
+        if isinstance(item, list):
+            return "<ul>" + "".join(f"<li>{esc(_coerce_str(x))}</li>" for x in item) + "</ul>"
+        if isinstance(item, dict):
+            parts = []
+            for v in item.values():
+                if v:
+                    parts.append(f"<li>{esc(_coerce_str(v))}</li>")
+            return "<ul>" + "".join(parts) + "</ul>"
+        text = str(item or "")
+        sentences = [s.strip() for s in re.split(r'\.\s+', text) if len(s.strip()) > 20]
+        if len(sentences) >= 3:
+            return "<ul>" + "".join(f"<li>{esc(s)}.</li>" for s in sentences) + "</ul>"
+        return f"<p>{esc(text)}</p>"
+
+    def render_poc(item) -> str:
+        if isinstance(item, dict):
+            scope = esc(item.get("suggested_scope", ""))
+            duration = esc(item.get("duration", ""))
+            rationale = esc(item.get("rationale", ""))
+            metrics = item.get("success_metrics", [])
+            parts = []
+            if scope:
+                parts.append(f'<p><strong>Scope:</strong> {scope}</p>')
+            if duration:
+                parts.append(f'<p><strong>Duration:</strong> {duration}</p>')
+            if rationale:
+                parts.append(f'<p>{rationale}</p>')
+            if metrics:
+                parts.append('<p><strong>Success Metrics:</strong></p><ul>')
+                for m in (metrics if isinstance(metrics, list) else [metrics]):
+                    parts.append(f'<li>{esc(_coerce_str(m))}</li>')
+                parts.append('</ul>')
+            return "".join(parts)
+        text = str(item or "")
+        sentences = [s.strip() for s in re.split(r'\.\s+', text) if len(s.strip()) > 20]
+        if len(sentences) >= 3:
+            return "<ul>" + "".join(f"<li>{esc(s)}.</li>" for s in sentences) + "</ul>"
+        return f"<p>{esc(text)}</p>"
+
+    def render_roi(item) -> str:
+        text = _coerce_str(item)
+        sentences = [s.strip() for s in re.split(r'\.\s+', text) if len(s.strip()) > 20]
+        if len(sentences) >= 3:
+            return "<ul>" + "".join(f"<li>{esc(s)}.</li>" for s in sentences) + "</ul>"
+        return f"<p>{esc(text)}</p>"
+
+    def render_email(item) -> str:
+        if isinstance(item, dict):
+            subject = item.get("subject", "")
+            body = item.get("body", "")
+            body = body.replace("\\n", "\n")
+            out = ""
+            if subject:
+                out += f'<p class="email-subject"><strong>Subject:</strong> {esc(subject)}</p>'
+            if body:
+                out += f'<pre>{esc(body)}</pre>'
+            return out or f'<pre>{esc(_coerce_str(item))}</pre>'
+        text = str(item or "").replace("\\n", "\n")
+        return f'<pre>{esc(text)}</pre>'
+
+    def list_items(items):
+        return "".join(f"<li>{esc(_coerce_str(x))}</li>" for x in (items or []))
 
     score = int(data.get("icp_score", 0))
     poc   = int(data.get("poc_fit_score", 0))
     tier_class = "tier1" if score >= 80 else "tier2" if score >= 65 else "tier3" if score >= 45 else "tier4"
     evidence_limited = data.get("evidence_limited", False)
 
-    # Evidence section
     evidence_items = data.get("company_evidence") or []
-    evidence_html = (
-        f'<div class="evidence-banner">'
-        f'<div class="evidence-header">⚠ Limited Website Evidence</div>'
-        f'<p class="evidence-note">Only {len(evidence_items)} evidence point(s) found. '
-        f'All recommendations below are cautious and exploratory — validate everything in discovery.</p>'
-        f'<ul>{"".join(f"<li>{esc(e)}</li>" for e in evidence_items)}</ul>'
-        f'</div>'
-        if evidence_limited else
-        f'<div class="evidence-section">'
-        f'<h2>Company Evidence Used</h2>'
-        f'<p class="evidence-note">All recommendations in this report are grounded in the following facts found on the company\'s website. '
-        f'No recommendation is made without supporting evidence.</p>'
-        f'<ul class="evidence-list">{"".join(f"<li>{esc(e)}</li>" for e in evidence_items)}</ul>'
-        f'</div>'
+    if evidence_limited:
+        ev_items_html = "".join(f"<li>{esc(e)}</li>" for e in evidence_items)
+        evidence_html = (
+            '<div class="evidence-banner">'
+            '<div class="evidence-header">Warning: Limited Website Evidence</div>'
+            f'<p class="evidence-note">Only {len(evidence_items)} evidence point(s) found. '
+            'All recommendations below are cautious and exploratory - validate everything in discovery.</p>'
+            f'<ul>{ev_items_html}</ul>'
+            '</div>'
+        )
+    else:
+        ev_items_html = "".join(f"<li>{esc(e)}</li>" for e in evidence_items)
+        evidence_html = (
+            '<div class="evidence-section">'
+            '<h2>Company Evidence Used</h2>'
+            '<p class="evidence-note">All recommendations in this report are grounded in the following facts '
+            "found on the company's website. No recommendation is made without supporting evidence.</p>"
+            f'<ul class="evidence-list">{ev_items_html}</ul>'
+            '</div>'
+        )
+
+    safety_cards = "".join(render_use_case_card(x) for x in (data.get("safety_use_cases") or []))
+    ops_cards = "".join(render_use_case_card(x) for x in (data.get("operations_use_cases") or []))
+    stakeholder_items = "".join(render_stakeholder(x) for x in (data.get("stakeholders") or []))
+
+    html_doc = (
+        "<!doctype html>\n"
+        "<html><head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{esc(data["company_name"])} - Rainscales Qualification Report</title>'
+        '<link rel="stylesheet" href="/static/styles.css">'
+        "<style>\n"
+        '.evidence-section{background:rgba(97,201,217,.06);border:1px solid rgba(97,201,217,.25);border-radius:14px;padding:20px 22px;margin:18px 0}\n'
+        '.evidence-section h2{color:#61C9D9;font-size:16px;margin:0 0 8px}\n'
+        '.evidence-note{color:#aab7d0;font-size:13px;margin:0 0 12px}\n'
+        '.evidence-list li{color:#e2e8f0;font-size:14px;margin:5px 0;padding-left:4px}\n'
+        '.evidence-banner{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);border-radius:14px;padding:18px 20px;margin:18px 0}\n'
+        '.evidence-header{color:#f59e0b;font-weight:700;font-size:15px;margin-bottom:8px}\n'
+        '.evidence-banner .evidence-note{color:#fcd34d}\n'
+        '.evidence-banner li{color:#fde68a;font-size:13px;margin:4px 0}\n'
+        '.evidence-tag{color:#61C9D9;font-size:12px;margin:4px 0 0;font-style:italic}\n'
+        '.value-prop{color:#a78bfa;font-size:13px;margin:8px 0 0;border-left:3px solid #a78bfa;padding-left:10px}\n'
+        '.badge{background:rgba(97,201,217,.15);color:#61C9D9;font-size:11px;padding:2px 7px;border-radius:99px;margin-left:6px;vertical-align:middle}\n'
+        '.rationale{color:#aab7d0;font-size:13px}\n'
+        '.email-subject{margin-bottom:8px;color:#e2e8f0}\n'
+        "</style>\n"
+        "</head>\n"
+        "<body><main class='wrap'>\n"
+        "<header class='hero'>\n"
+        "<div>\n"
+        "  <div class='eyebrow'>Rainscales GTM Intelligence</div>\n"
+        f"  <h1>{esc(data['company_name'])}</h1>\n"
+        f"  <a href='{esc(data['website'])}'>{esc(data['website'])}</a>\n"
+        f"  <p>{esc(data['description'])}</p>\n"
+        "</div>\n"
+        f"<div class='score {tier_class}'><span>{score}</span><small>ICP Score</small><em>{esc(data['tier'])}</em></div>\n"
+        f"<div class='score poc'><span>{poc}</span><small>POC Fit</small>"
+        f"<em>{'Limited evidence' if evidence_limited else 'Validate assumptions'}</em></div>\n"
+        "</header>\n\n"
+        + evidence_html + "\n\n"
+        + f"<section><h2>Why Now</h2>{render_why_now(data['why_now'])}</section>\n"
+        + f"<section><h2>Recommended First Use Case</h2><div class='highlight'>{render_first_use_case(data['first_use_case'])}</div></section>\n"
+        + f"<section class='grid'><div><h2>Safety Use Cases</h2>{safety_cards}</div>"
+        + f"<div><h2>Operational Use Cases</h2>{ops_cards}</div></section>\n"
+        + f"<section class='grid'>"
+        + f"<div><h2>Stakeholders</h2><ul>{stakeholder_items}</ul></div>"
+        + f"<div><h2>Discovery Questions</h2><ul>{list_items(data.get('discovery_questions'))}</ul></div>"
+        + f"</section>\n"
+        + f"<section><h2>POC Recommendation</h2>{render_poc(data['poc_recommendation'])}</section>\n"
+        + f"<section><h2>ROI Narrative</h2>{render_roi(data['roi_narrative'])}</section>\n"
+        + f"<section class='grid'>"
+        + f"<div><h2>Email</h2>{render_email(data['outreach_email'])}</div>"
+        + f"<div><h2>LinkedIn</h2><pre>{esc(_coerce_str(data.get('linkedin_message', '')))}</pre></div>"
+        + f"</section>\n"
+        + f"<section><h2>Assumptions to Validate</h2><ul>{list_items(data.get('assumptions'))}</ul></section>\n"
+        + f"<footer>Generated {date.today().isoformat()} - Rainscales Prospect Qualification Portal</footer>\n"
+        + "</main></body></html>"
     )
-
-    html_doc = f"""<!doctype html>
-<html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
-<title>{esc(data['company_name'])} — Rainscales Qualification Report</title>
-<link rel='stylesheet' href='/static/styles.css'>
-<style>
-.evidence-section{{background:rgba(97,201,217,.06);border:1px solid rgba(97,201,217,.25);border-radius:14px;padding:20px 22px;margin:18px 0}}
-.evidence-section h2{{color:#61C9D9;font-size:16px;margin:0 0 8px}}
-.evidence-note{{color:#aab7d0;font-size:13px;margin:0 0 12px}}
-.evidence-list li{{color:#e2e8f0;font-size:14px;margin:5px 0;padding-left:4px}}
-.evidence-banner{{background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.35);border-radius:14px;padding:18px 20px;margin:18px 0}}
-.evidence-header{{color:#f59e0b;font-weight:700;font-size:15px;margin-bottom:8px}}
-.evidence-banner .evidence-note{{color:#fcd34d}}
-.evidence-banner li{{color:#fde68a;font-size:13px;margin:4px 0}}
-</style>
-</head>
-<body><main class='wrap'>
-<header class='hero'>
-<div>
-  <div class='eyebrow'>Rainscales GTM Intelligence</div>
-  <h1>{esc(data['company_name'])}</h1>
-  <a href='{esc(data['website'])}'>{esc(data['website'])}</a>
-  <p>{esc(data['description'])}</p>
-</div>
-<div class='score {tier_class}'><span>{score}</span><small>ICP Score</small><em>{esc(data['tier'])}</em></div>
-<div class='score poc'><span>{poc}</span><small>POC Fit</small><em>{'Limited evidence' if evidence_limited else 'Validate assumptions'}</em></div>
-</header>
-
-{evidence_html}
-
-<section><h2>Why Now</h2><p>{esc(data['why_now'])}</p></section>
-<section><h2>Recommended First Use Case</h2><div class='highlight'>{esc(data['first_use_case'])}</div></section>
-<section class='grid'>
-  <div><h2>Safety Use Cases</h2>{cards(data['safety_use_cases'])}</div>
-  <div><h2>Operational Use Cases</h2>{cards(data['operations_use_cases'])}</div>
-</section>
-<section class='grid'>
-  <div><h2>Stakeholders</h2><ul>{list_items(data['stakeholders'])}</ul></div>
-  <div><h2>Discovery Questions</h2><ul>{list_items(data['discovery_questions'])}</ul></div>
-</section>
-<section><h2>POC Recommendation</h2><p>{esc(data['poc_recommendation'])}</p></section>
-<section><h2>ROI Narrative</h2><p>{esc(data['roi_narrative'])}</p></section>
-<section class='grid'>
-  <div><h2>Email</h2><pre>{esc(data['outreach_email'])}</pre></div>
-  <div><h2>LinkedIn</h2><pre>{esc(data['linkedin_message'])}</pre></div>
-</section>
-<section><h2>Assumptions to Validate</h2><ul>{list_items(data['assumptions'])}</ul></section>
-<footer>Generated {date.today().isoformat()} · Rainscales Prospect Qualification Portal</footer>
-</main></body></html>"""
 
     path.write_text(html_doc, encoding="utf-8")
     return filename
@@ -845,3 +976,4 @@ def batch_analyze(csv_path: Path) -> List[ProspectReport]:
             writer.writerow({k: d.get(k, "") for k in writer.fieldnames})
 
     return results
+
